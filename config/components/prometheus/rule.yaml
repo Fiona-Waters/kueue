@@ -1,0 +1,65 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kueue-alerts
+  namespace: system
+spec:
+  groups:
+    - name: kueue-info-alerts
+      rules:
+      - alert: KueuePodDown
+        expr: kube_pod_status_ready{namespace="redhat-ods-applications", pod=~"kueue-.*"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Kueue pod is down ({{ $labels.pod }})"
+          description: "The Kueue pod {{ $labels.pod }} in namespace {{ $labels.namespace }} is not ready."
+      - alert: HostCpuIsUnderutilized
+        expr: (100 - (rate(node_cpu_seconds_total{mode="idle"}[30m]) * 100) < 20) * on(instance) group_left (nodename) node_uname_info{nodename=~".+"}
+        for: 1d
+        labels:
+          severity: info
+        annotations:
+          summary: Host CPU is underutilized (instance {{ $labels.instance }})
+          description: "CPU load is below 20% for 1 day. Consider reducing the number of CPUs."
+      - alert:  HostHighCpuLoad
+        expr: (100 - (rate(node_cpu_seconds_total{mode="idle"}[30m]) * 100) > 80) * on(instance) group_left(nodename) node_uname_info{nodename=~".+"}
+        for: 1d
+        labels:
+          severity: info
+        annotations:
+          summary: Host high CPU load (instance {{ $labels.instance }})
+          description: "CPU load is above 80% for 1 day. Consider increasing the number of CPUs"
+      - alert: ContainerLowMemoryUsage 
+        expr: (sum(container_memory_working_set_bytes{name!=""}) BY (instance, name) / sum(container_spec_memory_limit_bytes > 0) BY (instance, name) * 100) < 20
+        for: 1d
+        labels:
+          severity: info
+        annotations:
+          summary: Container Low Memory Usage (instance {{ $labels.instance }})
+          description: Container memory usage is below 20% for 1 day. Consider reducing available memory.
+      - alert: ContainerHighMemoryUsage 
+        expr: (sum(container_memory_working_set_bytes{name!=""}) BY (instance, name) / sum(container_spec_memory_limit_bytes > 0) BY (instance, name) * 100) > 80
+        for: 1d
+        labels:
+          severity: info
+        annotations:
+          summary: Container High Memory Usage (instance {{ $labels.instance }})
+          description: Container memory usage is above 80% for 1 day. Consider increasing available memory.
+      - alert: HighClusterQueueResourceUsage
+        expr: sum(kueue_cluster_queue_resource_usage) by (cluster_queue) / sum(kueue_cluster_queue_nominal_quota) by (cluster_queue) > 0.8
+        for: 1d
+        labels:
+          severity: info
+        annotations:
+          summary: "High resource usage in cluster queue {{ $labels.cluster_queue }}"
+          description: "The resource usage in cluster queue {{ $labels.cluster_queue }} is above 80% of its nominal quota for more than 1 day."
+      - alert: LowClusterQueueResourceUsage
+        expr: sum(kueue_cluster_queue_resource_usage) by (cluster_queue) / sum(kueue_cluster_queue_nominal_quota) by (cluster_queue) < 0.2
+        for: 1d
+        labels:
+          severity: info
+        annotations:
+          summary: "Low resource usage in cluster queue {{ $labels.cluster_queue }}"
+          description: "The resource usage in cluster queue {{ $labels.cluster_queue }} is below 20% of its nominal quota for more than 1 day."
